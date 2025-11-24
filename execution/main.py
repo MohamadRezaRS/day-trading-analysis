@@ -174,7 +174,7 @@ def run_H1(symbol, processor, noisy_tracker):
                 print("no trade at H1")
         time.sleep(3600)
 
-def run_M30(symbol, processor, noisy_tracker):
+def run_M30(symbol, processor, noisy_tracker,fvg_tracker):
     while True:
         candles = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M30, 0, 4)
         if len(candles) >= 4:
@@ -182,6 +182,7 @@ def run_M30(symbol, processor, noisy_tracker):
             live = processor.process_live_candles(candles)
             if live != "no_trade" and live!="no pattern detected":
                 direction = live["direction"]
+                pattern=signal["pattern"]
                 c2 = live["candles"][-1]
                 session_code = get_entry_context(c2[0])[1]
                 noisy_day = noisy_tracker.update()
@@ -189,24 +190,29 @@ def run_M30(symbol, processor, noisy_tracker):
                 lows = [c[3] for c in live["candles"]]
                 daily = get_last_daily_candle(symbol)
                 weekly = get_last_weekly_candle(symbol)
-                if direction == "bullish":
-                    max_high = max(highs)
-                    is_highest_day = max_high >= daily[2]
-                    is_highest_week = max_high >= weekly[2]
+                if pattern == "bearish fvg":
+                    entry_price = float(c2[4])
+                    fvg_tracker.add_fvg("M30", live["candles"], entry_price)
+                    print("FVG registered at M30")
                 else:
-                    min_low = min(lows)
-                    is_highest_day = min_low <= daily[3]
-                    is_highest_week = min_low <= weekly[3]
-                signal = processor.process_trigger(
-                    candles=live["candles"],
-                    noisy_day=noisy_day,
-                    is_highest_day=is_highest_day,
-                    is_highest_week=is_highest_week,
-                    session_code=session_code,
-                    direction=direction
-                )
-                print("M30 signal:", signal)
-                execute_trade(signal)
+                    if direction == "bullish":
+                        max_high = max(highs)
+                        is_highest_day = max_high >= daily[2]
+                        is_highest_week = max_high >= weekly[2]
+                    else:
+                        min_low = min(lows)
+                        is_highest_day = min_low <= daily[3]
+                        is_highest_week = min_low <= weekly[3]
+                    signal = processor.process_trigger(
+                        candles=live["candles"],
+                        noisy_day=noisy_day,
+                        is_highest_day=is_highest_day,
+                        is_highest_week=is_highest_week,
+                        session_code=session_code,
+                        direction=direction
+                    )
+                    print("M30 signal:", signal)
+                    execute_trade(signal)
             else:
                 print("no trade at M30")
         time.sleep(1800)
@@ -336,7 +342,7 @@ def start_engine(symbol):
     noisy_tracker = NoisyDayTracker(symbol)
     fvg_tracker = FVGTracker()
 
-    threading.Thread(target=run_H4, args=(symbol, processors["H4"], fvg_tracker), daemon=True).start()
+    #threading.Thread(target=run_H4, args=(symbol, processors["H4"], fvg_tracker), daemon=True).start()
     threading.Thread(target=run_H1, args=(symbol, processors["H1"], noisy_tracker), daemon=True).start()
     threading.Thread(target=run_M30, args=(symbol, processors["M30"], noisy_tracker), daemon=True).start()
     threading.Thread(target=run_M15, args=(symbol, processors["M15"], noisy_tracker, fvg_tracker), daemon=True).start()
