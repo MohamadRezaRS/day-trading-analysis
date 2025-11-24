@@ -11,10 +11,10 @@ class XAUUSD_M15_Processor:
         self.setup = SetupMaker()
 
         self.model_paths = {
-            "bearish fvg": "models/xauusd_fvg_bearish_M15_KNN.pkl",
-            "bullish engulfing": "models/xauusd_engulfing_bullish_M15_SVR.pkl",
+            "bearish fvg": "models/xauusd_fvg_bearish_M15_GradientBoosting.pkl",
+            "bullish engulfing": "models/xauusd_engulfing_bullish_M15_KNN.pkl",
             "bullish orderblock": "models/xauusd_orderblock_bullish_M15_SVR.pkl",
-            "bearish orderblock": "models/xauusd_orderblock_bearish_M15_SVR.pkl"
+            "bearish orderblock": "models/xauusd_orderblock_bearish_M15_GradientBoosting.pkl"
         }
 
         self.scaler_paths = {
@@ -50,11 +50,11 @@ class XAUUSD_M15_Processor:
     def process_trigger(self, candles, pattern, noisy_day=None, is_highest_day=None, is_highest_week=None, entry_date=None,session_code=None,direction=None):
         
         if pattern == "bearish fvg":
-            return self._process_fvg(candles, pattern)
+            return self._process_fvg(candles, pattern,entry_date)
 
         return self._process_trigger(candles, pattern, noisy_day, is_highest_day, is_highest_week, session_code)
 
-    def _process_fvg(self, candles, pattern):
+    def _process_fvg(self, candles, pattern,entry_date):
         c1, c2, c3 = candles[-3], candles[-2], candles[-1]
 
         # Index mapping
@@ -67,7 +67,7 @@ class XAUUSD_M15_Processor:
         gap_size = float(c1[LOW]) - float(c3[HIGH])
         percentage = gap_size / float(c3[CLOSE]) if float(c3[CLOSE]) != 0 else 0
         weekday = pd.to_datetime(c3[TIMESTAMP]).weekday()
-
+        entry_day=entry_date
         scaler = self.scalers[pattern]
         candle_min, gap_min, pct_min = scaler.data_min_[:3]
         candle_max, gap_max, pct_max = scaler.data_max_[:3]
@@ -77,10 +77,10 @@ class XAUUSD_M15_Processor:
         scaled_gap = (gap_size - gap_min) / (gap_max - gap_min)
         scaled_pct = (percentage - pct_min) / (pct_max - pct_min)
 
-        vector = [scaled_candle, scaled_gap, scaled_pct, int(weekday)]
+        vector = {"candle_size":scaled_candle,"gap_size": scaled_gap,"percentage": scaled_pct,"entry_weekday": int(entry_day)}
 
         # Predict — no unscaling needed
-        prediction = self.models[pattern].predict([vector])[0]
+        prediction = self.models[pattern].predict(pd.DataFrame([vector]))[0]
 
         signal = self.setup.make_signal(
             pattern="fvg",
@@ -114,15 +114,18 @@ class XAUUSD_M15_Processor:
         weekday = pd.to_datetime(c2[TIMESTAMP]).weekday()
 
         if pattern == "bullish engulfing":
-            vector = [ int(noisy_day), int(is_highest_day), int(is_highest_week),scaled_volume, int(session_code), int(weekday)]
+            vector = {"noisy_day":int(noisy_day),"is_highest_day": int(is_highest_day),"is_highest_week": int(is_highest_week),
+                      "volume":scaled_volume,"session": int(session_code),"weekday": int(weekday)}
         elif pattern == "bullish orderblock":
-            vector = [ int(noisy_day), int(is_highest_day), int(is_highest_week),scaled_volume, int(session_code),int(weekday)]
+            vector = {"noisy_day": int(noisy_day),"is_highest_day": int(is_highest_day),"is_highest_week": int(is_highest_week),
+                      "volume":scaled_volume,"session": int(session_code),"weekday":int(weekday)}
         elif pattern == "bearish orderblock":
-            vector = [ int(noisy_day), int(is_highest_day),int(is_highest_week),scaled_volume, int(session_code)]
+            vector = {"noisy_day": int(noisy_day),"is_highest_day": int(is_highest_day),"is_highest_week": int(is_highest_week),
+                      "volume":scaled_volume,"session": int(session_code)}
         else:
             return "no_trade"
 
-        scaled_prediction = float(self.models[pattern].predict([vector]))
+        scaled_prediction = float(self.models[pattern].predict(pd.DataFrame([vector])))
         #unscaled_prediction = (scaled_prediction * (target_max - target_min)) + target_min
 
         signal = self.setup.make_signal(

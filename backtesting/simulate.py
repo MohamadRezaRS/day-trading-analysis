@@ -151,7 +151,7 @@ def run_tf_simulation(tf, df, daily_df, processor, start_date):
     balances = {"best": START_BALANCE, "worst": START_BALANCE}
     balance_histories = {"best": [], "worst": []}
     ledgers = {"best": [], "worst": []}
-
+    
     noisy_tracker = NoisyDayTracker(df)
     fvg_tracker = FVGTracker()
 
@@ -306,8 +306,6 @@ def visualize(results, label):
 
 
 if __name__ == "__main__":
-    from datetime import datetime
-    import pandas as pd
 
     start_date = datetime(2025, 1, 30)
 
@@ -324,9 +322,9 @@ if __name__ == "__main__":
     m15_results = run_tf_simulation("M15", m15_df, None, XAUUSD_M15_Processor(), start_date)
     m30_results = run_tf_simulation("M30", m30_df, None, XAUUSD_M30_Processor(), start_date)
     h1_results = run_tf_simulation("H1", h1_df, None, XAUUSD_H1_Processor(), start_date)
-    h4_results = run_tf_simulation("H4", h4_df, None, XAUUSD_H4_Processor(), start_date)
+    #h4_results = run_tf_simulation("H4", h4_df, None, XAUUSD_H4_Processor(), start_date)
 
     visualize(m15_results, "M15")
     visualize(m30_results, "M30")
     visualize(h1_results, "H1")
-    visualize(h4_results, "H4")
+    #visualize(h4_results, "H4")

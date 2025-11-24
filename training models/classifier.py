@@ -2,12 +2,20 @@ import pandas as pd
 import os
 import joblib
 from collections import defaultdict
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from xgboost import XGBClassifier
+from sklearn.metrics import (
+    confusion_matrix,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    average_precision_score,
+    accuracy_score
+)
 
 # Inputs
 symbol = input("Enter symbol (e.g., eurusd): ").lower()
@@ -34,7 +42,7 @@ for filename in os.listdir(base_path):
     path = os.path.join(base_path, filename)
     df = pd.read_csv(path)
 
-    if "target" not in df.columns :
+    if "target" not in df.columns:
         continue
 
     # Extract direction and timeframe
@@ -53,47 +61,54 @@ for filename in os.listdir(base_path):
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
 
-    # Count total positives and negatives
-    total_pos = sum(y_test == 1)
-    total_neg = sum(y_test == 0)
+    # Check balance
+    pos_ratio = sum(y_test == 1) / len(y_test)
+    neg_ratio = sum(y_test == 0) / len(y_test)
+    balanced = (pos_ratio >= 0.3) and (neg_ratio >= 0.3)
 
-    best_score = -1
-    best_model = None
-    best_name = None
-    accurate_found = False
+    print(f"\n=== Dataset: {filename} | Balanced: {balanced} (Pos={pos_ratio:.2f}, Neg={neg_ratio:.2f}) ===")
+
+    candidate_models = []  # store models eligible for saving
 
     for name, model in models.items():
         model.fit(X_train, y_train)
         preds = model.predict(X_test)
+        probs = model.predict_proba(X_test)[:, 1] if hasattr(model, "predict_proba") else None
 
-        tp = sum((preds == 1) & (y_test == 1))
-        tn = sum((preds == 0) & (y_test == 0))
+        cm = confusion_matrix(y_test, preds)
 
-        score = 0
-        if total_pos > 0 and total_neg > 0:
-            score = (tp / total_pos) * (tn / total_neg)
-            #score= (tp / total_pos) + (tn / total_neg)  
-        #if score >= 1.0:
-        print(f"{filename} — {name}: TP={tp}, TN={tn}, Score={round(score, 4)}")
+        if balanced:
+            # Balanced dataset → Accuracy + Weighted F1
+            acc = accuracy_score(y_test, preds)
+            f1w = f1_score(y_test, preds, average="weighted")
+            print(f"{name}: Accuracy={acc:.3f}, F1(weighted)={f1w:.3f}")
 
-        results[(direction, timeframe)].append({
-            "model": name,
-            "score": round(score, 4),
-            "tp": tp,
-            "tn": tn
-        })
+            # Store candidate if F1 >= 0.55
+            if f1w >= 0.55:
+                candidate_models.append((acc, f1w, name, model))
 
-        if score > 0.25 :
-            accurate_found = True
-            if score > best_score:
-                best_score = score
-                best_model = model
-                best_name = name
+        else:
+            # Imbalanced dataset → Precision, Recall, F1 (minority class), PR-AUC
+            precision = precision_score(y_test, preds, pos_label=1, zero_division=0)
+            recall = recall_score(y_test, preds, pos_label=1, zero_division=0)
+            f1m = f1_score(y_test, preds, pos_label=1, zero_division=0)
+            pr_auc = average_precision_score(y_test, probs) if probs is not None else None
+            roc_auc = roc_auc_score(y_test, probs) if probs is not None else None
 
-    # Save best model only if accurate
-    if accurate_found and best_model:
+            pr_auc_str = f"{pr_auc:.3f}" if pr_auc is not None else "None"
+            roc_auc_str = f"{roc_auc:.3f}" if roc_auc is not None else "None"
+
+            print(
+                f"{name}: Precision(SL)={precision:.3f}, Recall(SL)={recall:.3f}, "
+                f"F1(SL)={f1m:.3f}, PR-AUC={pr_auc_str}, ROC-AUC={roc_auc_str}"
+            )
+
+    # Save best model for balanced datasets
+    if balanced and candidate_models:
+        # Pick model with highest accuracy among candidates
+        best_acc, best_f1, best_name, best_model = max(candidate_models, key=lambda x: x[0])
         model_filename = f"{symbol}_{pattern}_{direction}_{timeframe}_{best_name}.pkl"
         joblib.dump(best_model, model_filename)
-        print(f" Saved best model: {model_filename}")
-    else:
-        print(f"No accurate model found for {direction.upper()} {timeframe}")
+        print(f"Saved best balanced model: {model_filename} (Accuracy={best_acc:.3f}, F1={best_f1:.3f})")
+    elif balanced:
+        print("No balanced model met F1 ≥ 0.55 threshold.")

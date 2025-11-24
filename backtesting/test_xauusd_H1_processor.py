@@ -12,7 +12,7 @@ class XAUUSD_H1_Processor:
 
         self.model_paths = {
             "bullish": "models/xauusd_orderblock_bullish_H1_SVR.pkl",
-            "bearish": "models/xauusd_orderblock_bearish_H1_SVR.pkl"
+            "bearish": "models/xauusd_orderblock_bearish_H1_GradientBoosting.pkl"
         }
         self.scaler_paths = {
             "bullish": "scalers/scaler_xauusd_orderblock_bullish_H1.pkl",
@@ -72,12 +72,13 @@ class XAUUSD_H1_Processor:
         # Build vector
         if direction == "bullish":
             weekday = pd.to_datetime(c2[TIMESTAMP]).weekday()
-            vector = [int(noisy_day), int(is_highest_day), int(is_highest_week),scaled_volume, int(session_code), int(weekday)]
+            vector = {"noisy_day":int(noisy_day),"is_highest_day": int(is_highest_day),"is_highest_week": int(is_highest_week),
+                      "volume":scaled_volume,"session": int(session_code),"weekday": int(weekday)}
         else:
-            vector = [int(noisy_day), int(is_highest_day), int(is_highest_week), scaled_volume, int(session_code)]
-
+            vector = {"noisy_day":int(noisy_day),"is_highest_day": int(is_highest_day),"is_highest_week": int(is_highest_week),
+                                "volume":scaled_volume,"session": int(session_code)}
         # Predict and unscale
-        scaled_prediction = float(self.models[direction].predict([vector]))
+        scaled_prediction = float(self.models[direction].predict(pd.DataFrame([vector])))
         #unscaled_prediction = (scaled_prediction * (target_max - target_min) ) + target_min
 
         signal = self.setup.make_signal(
