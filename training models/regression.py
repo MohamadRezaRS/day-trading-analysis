@@ -70,7 +70,7 @@ for filename in os.listdir(base_path):
     X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_test = y[:split_idx], y[split_idx:]
 
-    best_mse= float("inf")
+    best_tp= -float("inf")
     best_model = None
     best_name = None
     accurate_found = False
@@ -96,8 +96,8 @@ for filename in os.listdir(base_path):
         print(f"{filename} — {name}: TP Ratio = {tp_ratio:.2f}, MSE = {mse:.2f}")
         accurate_found = True
 
-        if mse < best_mse:
-            best_mse = mse
+        if tp_ratio > best_tp:
+            best_tp = tp_ratio
             best_model = model
             best_name = name
 

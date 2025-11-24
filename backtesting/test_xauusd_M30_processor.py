@@ -13,7 +13,7 @@ class XAUUSD_M30_Processor:
         self.model_paths = {
             "bearish fvg": "models/xauusd_fvg_bearish_M30_GradientBoosting.pkl",
             "bullish orderblock": "models/xauusd_orderblock_bullish_M30_SVR.pkl",
-            "bearish orderblock": "models/xauusd_orderblock_bearish_M30_GradientBoosting.pkl"
+            "bearish orderblock": "models/xauusd_orderblock_bearish_M30_SVR.pkl"
         }
         self.scaler_paths = {
             "bearish fvg": "scalers/scaler_xauusd_fvg_bearish_M30.pkl",
