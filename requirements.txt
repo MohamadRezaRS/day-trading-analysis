@@ -2,8 +2,10 @@
 pandas==2.2.0
 numpy==1.26.3
 
-# Financial Data
+# Financial Data & API
 yfinance==0.2.36
+MetaTrader5==5.0.6090
+pytz==2024.1
 
 # Machine Learning
 scikit-learn==1.4.0
