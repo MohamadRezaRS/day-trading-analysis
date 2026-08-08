@@ -8,11 +8,11 @@ Rather than building a speculative live trading execution script, this project a
 ---
 
 ## 1. Asset Coverage & Data Layer
-The framework ingests high-frequency intraday and daily price data across 5 core global markets to ensure cross-asset validity:
+The framework ingests high-frequency intraday and daily price data across 5 core global markets retrieved via MetaTrader 5 (MT5) to ensure cross-asset validity:
 
-* **Equity Indices:** S&P 500 (`^GSPC`), Nasdaq (`^IXIC`)
-* **Commodities:** Gold (`GC=F`), Silver (`SI=F`)
-* **Foreign Exchange:** EUR/USD (`EURUSD=X`)
+* **Equity Indices:** S&P 500 (`US500`), Nasdaq (`USTEC`)
+* **Commodities:** Gold (`XAUUSD`), Silver (`XAGUSD`)
+* **Foreign Exchange:** EUR/USD (`EURUSD`)
 
 ### Market Noise & Regime Filtering
 Before evaluating trading signals, price data is passed through market regime filters to separate trending price movement from random noise:
@@ -63,3 +63,10 @@ All backtesting scenarios route trade volume through an institutional risk manag
 * **Confidence-Weighted Sizing:** Scales position sizes proportional to the prediction probability outputted by the ML model.
 * **Drawdown Limits & Risk Capital:** Enforces maximum risk per trade (e.g., 1–2% portfolio equity) and hard stop rules for maximum account drawdown.
 
+---
+
+## Expected Outputs & Deliverables
+* **Clean Data Pipeline:** Standardized scripts to extract, clean, and enrich multi-asset price histories using MetaTrader 5 (MT5).
+* **Modular Codebase (`src/`):** Separated modules for data ingestion, pattern recognition, ML training, backtesting, and portfolio management.
+* **Performance Tear Sheets:** Visual plots showing cumulative returns, Sharpe Ratio, Maximum Drawdown, and Win/Loss distributions across all 4 scenarios.
+* **Comprehensive README:** A business and technical summary explaining the final research findings.
