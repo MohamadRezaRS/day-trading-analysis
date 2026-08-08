@@ -1,0 +1,15 @@
+# Data Manipulation & Math
+pandas==2.2.0
+numpy==1.26.3
+
+# Financial Data
+yfinance==0.2.36
+
+# Machine Learning
+scikit-learn==1.4.0
+xgboost==2.0.3
+
+# Visualizations & Notebooks
+matplotlib==3.8.2
+seaborn==0.13.2
+jupyter==1.0.0
