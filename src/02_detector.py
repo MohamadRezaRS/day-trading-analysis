@@ -142,7 +142,7 @@ class ICTDetector:
         else:
             period = pd.Series(dates, index=self.df.index)
 
-        
+        # Get values
         anchor_high = self.df.groupby(period)['High'].max().shift(1)
         anchor_low = self.df.groupby(period)['Low'].min().shift(1)
         
@@ -158,8 +158,8 @@ class ICTDetector:
         mapped_l_dt = period.map(anchor_low_dt)
         
         
-        ah_time_arr = mapped_h_dt.dt.strftime('%H:%M:%S').fillna("00:00:00").values
-        al_time_arr = mapped_l_dt.dt.strftime('%H:%M:%S').fillna("00:00:00").values
+        ah_time_arr = pd.Series(mapped_h_dt).dt.strftime('%H:%M:%S').fillna("00:00:00").values
+        al_time_arr = pd.Series(mapped_l_dt).dt.strftime('%H:%M:%S').fillna("00:00:00").values
 
         return mapped_h_val, mapped_l_val, ah_time_arr, al_time_arr
 
