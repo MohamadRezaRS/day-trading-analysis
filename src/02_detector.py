@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import numpy as np
-from datetime import time
+
 
 """
 02_detector.py
@@ -24,6 +24,34 @@ Timeframe-Specific High/Low Anchors (Used for OTE & Liquidity Sweeps):
 - 5M: Intra Session Highs / Lows (Asia, London, NY AM completed sessions)
 """
 
+"""
+    
+TRADE SIMULATION & RISK MANAGEMENT LOGIC (1:2 Risk-to-Reward)
+    
+Every pattern strictly targets a 1:2 R:R. 
+Risk = ABS(Entry_Price - SL_Price)
+TP_Size = Risk * 2
+Take Profit = Entry_Price +/- TP_Size
+
+1. Fair Value Gap (FVG)
+    - Entry: The gap boundary (Low of Candle 3 for Bullish, High for Bearish).
+    - SL: The absolute extreme of the displacement origin (Low of Candle 1 for Bullish).
+       
+2. Order Block (OB)
+    - Entry: The front edge of the OB candle (High of C2 for Bullish).
+    - SL: The back edge of the OB candle (Low of C2 for Bullish).
+       
+3. Liquidity Sweep
+    - Entry: The Close price of the sweeping candle (confirming rejection).
+    - SL: The absolute extreme tip of the sweep wick.
+       
+4. Optimal Trade Entry (OTE)
+    - Entry: The 62% Fibonacci retracement level.
+    - SL: The absolute origin of the impulse leg (Anchor Low for Bullish).
+    
+"""
+
+
 ASSETS = ['EURUSD','Gold','Silver','Nasdaq','SP500']
 TIMEFRAMES = ['5M', '15M', '1H', '1D']
 
@@ -43,7 +71,7 @@ class ICTDetector:
         self.timeframe = timeframe
         self.asset = asset
         
-        # Format Datetime index
+        
         self.df['Datetime'] = pd.to_datetime(self.df['Date'].astype(str) + ' ' + self.df['Time'].astype(str))
         self.df.set_index('Datetime', inplace=True)
         self.df['ATR'] = calc_atr(self.df)
@@ -62,12 +90,12 @@ class ICTDetector:
         self._date = self.df['Date'].astype(str).values
         self._time = self.df['Time'].astype(str).values
         
-        # 1M Simulation Arrays
+        
         self._m1_h = self.df_1m['High'].values
         self._m1_l = self.df_1m['Low'].values
         self._m1_dt = self.df_1m.index.values
         
-        # Initialize export lists
+        
         self.fvg_records, self.ob_records = [], []
         self.sweep_records, self.ote_records = [], []
 
@@ -76,7 +104,7 @@ class ICTDetector:
         Pure NumPy Vectorized Forward Simulation.
         Uses binary search (searchsorted) and argmax for instant execution.
         """
-        # Find the starting index in the 1M array instantly
+        
         idx = np.searchsorted(self._m1_dt, start_dt)
         if idx >= len(self._m1_dt): 
             return np.nan
@@ -91,7 +119,7 @@ class ICTDetector:
             sl_mask = future_h >= sl_price
             tp_mask = future_l <= tp_price
             
-        # Check if they were hit at all
+        
         sl_any = np.any(sl_mask)
         tp_any = np.any(tp_mask)
         
@@ -114,12 +142,29 @@ class ICTDetector:
         else:
             period = pd.Series(dates, index=self.df.index)
 
+        
         anchor_high = self.df.groupby(period)['High'].max().shift(1)
         anchor_low = self.df.groupby(period)['Low'].min().shift(1)
         
-        # Return as NumPy arrays for O(1) loop lookups
-        return period.map(anchor_high).values, period.map(anchor_low).values
+        
+        anchor_high_dt = self.df.groupby(period)['High'].idxmax().shift(1)
+        anchor_low_dt = self.df.groupby(period)['Low'].idxmin().shift(1)
+        
+        
+        mapped_h_val = period.map(anchor_high).values
+        mapped_l_val = period.map(anchor_low).values
+        
+        mapped_h_dt = period.map(anchor_high_dt)
+        mapped_l_dt = period.map(anchor_low_dt)
+        
+        
+        ah_time_arr = mapped_h_dt.dt.strftime('%H:%M:%S').fillna("00:00:00").values
+        al_time_arr = mapped_l_dt.dt.strftime('%H:%M:%S').fillna("00:00:00").values
 
+        return mapped_h_val, mapped_l_val, ah_time_arr, al_time_arr
+
+
+    
     def detect_fvg(self, ah_arr, al_arr):
         c1_h, c1_l = self.df['High'].shift(2).values, self.df['Low'].shift(2).values
         c2_o, c2_c = self.df['Open'].shift(1).values, self.df['Close'].shift(1).values
@@ -221,47 +266,47 @@ class ICTDetector:
                 })
 
 
-    def detect_sweep(self, ah_arr, al_arr):
-            bearish_mask = (self._h > ah_arr) & (self._c < ah_arr)
-            bullish_mask = (self._l < al_arr) & (self._c > al_arr)
+    def detect_sweep(self, ah_arr, al_arr, ah_time, al_time):
+        bearish_mask = (self._h > ah_arr) & (self._c < ah_arr)
+        bullish_mask = (self._l < al_arr) & (self._c > al_arr)
+        
+        valid_indices = np.where(bullish_mask | bearish_mask)[0]
+        
+        for i in valid_indices:
+            if pd.isna(ah_arr[i]) or pd.isna(al_arr[i]): continue
             
-            valid_indices = np.where(bullish_mask | bearish_mask)[0]
+            is_bull = bullish_mask[i]
+            direction = 1 if is_bull else -1
+            gap_size = ah_arr[i] - al_arr[i]
             
-            for i in valid_indices:
-                if pd.isna(ah_arr[i]) or pd.isna(al_arr[i]): continue
-                
-                is_bull = bullish_mask[i]
-                direction = 1 if is_bull else -1
-                gap_size = ah_arr[i] - al_arr[i]
-                
-                entry_price = self._c[i]
-                sl_price = self._l[i] if is_bull else self._h[i]
-                risk = abs(entry_price - sl_price)
-                
-                if risk > 0:
-                    tp_size = 2 * risk
-                    tp_price = entry_price + tp_size if is_bull else entry_price - tp_size
-                    outcome = self._simulate_trade(self._dt[i], sl_price, tp_price, direction)
-                else:
-                    tp_size = np.nan
-                    outcome = np.nan
-                
-                self.sweep_records.append({
-                    'Direction': direction,
-                    'Highs_Date': self._date[i],
-                    'Highs_Time': "00:00:00",
-                    'Lows_Date': self._date[i],
-                    'Lows_Time': "00:00:00",
-                    'Gap_Size': gap_size,
-                    'Sweep_Time': self._time[i],
-                    'Sweep_Date': self._date[i],
-                    'Sweep_Volume': self._v[i],
-                    'TP_Size': tp_size,
-                    'TP_or_SL': outcome
-                })
+            entry_price = self._c[i]
+            sl_price = self._l[i] if is_bull else self._h[i]
+            risk = abs(entry_price - sl_price)
+            
+            if risk > 0:
+                tp_size = 2 * risk
+                tp_price = entry_price + tp_size if is_bull else entry_price - tp_size
+                outcome = self._simulate_trade(self._dt[i], sl_price, tp_price, direction)
+            else:
+                tp_size = np.nan
+                outcome = np.nan
+            
+            self.sweep_records.append({
+                'Direction': direction,
+                'Highs_Date': self._date[i], 
+                'Highs_Time': ah_time[i],    
+                'Lows_Date': self._date[i],  
+                'Lows_Time': al_time[i],     
+                'Gap_Size': gap_size,
+                'Sweep_Time': self._time[i],
+                'Sweep_Date': self._date[i],
+                'Sweep_Volume': self._v[i],
+                'TP_Size': tp_size,
+                'TP_or_SL': outcome
+            })
 
 
-    def detect_ote(self, ah_arr, al_arr):
+    def detect_ote(self, ah_arr, al_arr, ah_time, al_time):
         gap_size = ah_arr - al_arr
         
         with np.errstate(invalid='ignore'):
@@ -290,9 +335,9 @@ class ICTDetector:
             self.ote_records.append({
                 'Direction': direction,
                 'Highs_Date': self._date[i],
-                'Highs_Time': "00:00:00",
+                'Highs_Time': ah_time[i],  
                 'Lows_Date': self._date[i],
-                'Lows_Time': "00:00:00",
+                'Lows_Time': al_time[i],   
                 'Gap_Size': gap_size[i],
                 'Entry_Volume': self._v[i],
                 'Entry_Date': self._date[i],
@@ -303,12 +348,12 @@ class ICTDetector:
             })
 
     def run_and_save(self):
-        ah_arr, al_arr = self._get_time_anchored_liquidity()
+        ah_arr, al_arr, ah_time, al_time = self._get_time_anchored_liquidity()
         
         self.detect_fvg(ah_arr, al_arr)
         self.detect_ob()
-        self.detect_sweep(ah_arr, al_arr)
-        self.detect_ote(ah_arr, al_arr)
+        self.detect_sweep(ah_arr, al_arr, ah_time, al_time)
+        self.detect_ote(ah_arr, al_arr, ah_time, al_time)
         
         if self.fvg_records:
             pd.DataFrame(self.fvg_records).to_csv(f"data/processed/fvg_{self.timeframe}_{self.asset}.csv", index=False)
@@ -318,6 +363,8 @@ class ICTDetector:
             pd.DataFrame(self.sweep_records).to_csv(f"data/processed/sweep_{self.timeframe}_{self.asset}.csv", index=False)
         if self.ote_records:
             pd.DataFrame(self.ote_records).to_csv(f"data/processed/ote_{self.timeframe}_{self.asset}.csv", index=False)
+
+
 
 if __name__ == "__main__":
     os.makedirs('data/processed', exist_ok=True)
