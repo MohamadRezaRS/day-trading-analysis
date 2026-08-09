@@ -17,6 +17,9 @@ data/*
 models/*
 !models/.keep
 
+
+scalers/*
+
 # OS generated files
 .DS_Store
 Thumbs.db
