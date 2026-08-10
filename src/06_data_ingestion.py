@@ -12,7 +12,7 @@ symbol_map = {
     "EURUSD": "EURUSD",
     "XAUUSD": "Gold",
     "XAGUSD": "Silver",
-    "USP500": "SP500",
+    "US500": "SP500",
     "USTEC": "Nasdaq"
 }
 
@@ -20,7 +20,7 @@ timezone = pytz.timezone("Etc/UTC")
 utc_from = datetime(2025, 1, 1, tzinfo=timezone)
 utc_to = datetime(2026, 7, 1, 23, 59, 59, tzinfo=timezone)
 
-os.makedirs('../data/oos', exist_ok=True)
+os.makedirs('data/oos', exist_ok=True)
 
 print("MT5 Initialized Successfully. Beginning data extraction...")
 
@@ -50,7 +50,7 @@ for sym, name in symbol_map.items():
         
         df = df[['Open', 'High', 'Low', 'Close', 'Volume', 'Spread', 'Date', 'Time']]
         
-        df.to_csv(f'../data/oos/{name}_1M.csv', index=False)
+        df.to_csv(f'data/oos/{name}_1M.csv', index=False)
         print(f"Saved {len(df)} rows for {name}")
     else:
         print(f"No data returned for {sym}.")
