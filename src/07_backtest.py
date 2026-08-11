@@ -4,7 +4,7 @@ import numpy as np
 from data_resampler import DataResampler
 from ict_detector import ICTDetector
 from ml_predictor import MLPredictor
-from account_manager import EventAccountManager, EventTradePool, fast_simulate
+from account_manager import EventAccountManager, EventTradePool
 import sys
 import os
 import importlib
@@ -24,6 +24,7 @@ importlib.reload(data_resampler)
 importlib.reload(account_manager)
 
 
+
 def run_pipeline(
     data_dir='../data/oos',
     models_dir='../models',
@@ -34,7 +35,8 @@ def run_pipeline(
     max_total_risk=0.03,
     allowed_markets=['EURUSD', 'Gold', 'Silver', 'SP500', 'Nasdaq'],
     allowed_patterns=['fvg', 'ob', 'sweep', 'ote'],
-    scenario=1
+    scenario=1,
+    use_sweep=True
 ):
     os.makedirs(cache_dir, exist_ok=True)
     df_1m_dict = {}
@@ -116,6 +118,7 @@ def run_pipeline(
         
     master_df = pd.concat(valid_dfs, ignore_index=True)
     master_df = master_df[master_df['Strategy'].isin(allowed_patterns)]
+    master_df = master_df[master_df['Market'].isin(allowed_markets)]
 
     if master_df.empty:
         return np.empty((0, 2))
@@ -134,10 +137,9 @@ def run_pipeline(
     
     raw_events = []
     
-    print(f"Building timeline for {len(master_df)} setups in Scenario {scenario}...")
+    
     for i, (_, row) in enumerate(master_df.iterrows()):
-        if i % 100000 == 0 and i > 0:
-            print(f"  ...processed {i} setups...")
+        
             
         setup = row.to_dict()
         
@@ -154,35 +156,30 @@ def run_pipeline(
             continue
             
         setup['Setup_Time'] = en_t
+        is_inverse = False
         
+        if setup.get('Strategy') == 'sweep':
+            if not use_sweep:
+                continue
+            is_inverse = True
+
         if scenario in [3, 4] and 'Prediction' in setup and pd.notna(setup['Prediction']):
             prob = setup['Prediction']
             if 0.20 <= prob < 0.65:
                 continue 
                 
             if prob < 0.20:
-                setup['Direction'] *= -1
-                dist = abs(entry_p - sl_p)
-                setup['TP_Price'] = entry_p + (dist * 2 * setup['Direction'])
-                setup['SL_Price'] = entry_p - (dist * setup['Direction'])
-                
-                mkt = setup['Market']
-                if mkt in df_1m_dict:
-                    m1_df = df_1m_dict[mkt]
-                    
-                    form_raw = setup.get('Formation_Time')
-                    sim_start_time = pd.to_datetime(form_raw) if not pd.isna(form_raw) else en_t
-                        
-                    en_time, ex_time, out = fast_simulate(
-                        m1_df.index.values, m1_df['High'].values,
-                        m1_df['Low'].values, m1_df['Spread'].values,
-                        sim_start_time, 
-                        entry_p, setup['SL_Price'], setup['TP_Price'], setup['Direction']
-                    )
-                    if ex_time is None:
-                        continue
-                    en_t, ex_t, setup['Outcome'] = pd.to_datetime(en_time), pd.to_datetime(ex_time), out
-                    setup['Entry_Time'], setup['Exit_Time'] = en_t, ex_t
+                is_inverse = True
+
+        setup['is_inverse'] = is_inverse
+
+        if is_inverse:
+            orig_dir = setup['Direction']
+            setup['Direction'] = orig_dir * -1
+            orig_sl = setup['SL_Price']
+            orig_tp = setup.get('TP_Price', entry_p + (abs(entry_p - orig_sl) * 2 * orig_dir))
+            setup['SL_Price'] = orig_tp
+            setup['TP_Price'] = orig_sl
 
         raw_events.append((en_t, 'ENTRY', setup))
         raw_events.append((ex_t, 'EXIT', setup))
@@ -198,14 +195,13 @@ def run_pipeline(
         for mkt, df in df_1m_dict.items()
     }
 
-    print(f"Simulating {len(events)} chronological events...")
+    
     for i, event in enumerate(events):
         if manager.is_blown:
-            print(f"  └─ Account hit 30% drawdown at event {i}. Halting scenario to save time.")
+            print(f"Account hit 30% drawdown at event {i}. Halting scenario to save time.")
             break
             
-        if i % 200000 == 0 and i > 0:
-            print(f"  ...simulated {i} events...")
+        
             
         curr_time = event['Time']
         setup = event['Setup']
@@ -218,6 +214,9 @@ def run_pipeline(
             elif scenario in [2, 4]:
                 if pool.process_signal(setup, curr_time):
                     manager.handle_entry(setup, curr_time, df_1m_dict, df_1m_arrays)
+
+    tp_ratio = (manager.winning_trades / manager.total_trades * 100) if manager.total_trades > 0 else 0
+    print(f"Scenario {scenario} Finished | Trades: {manager.total_trades} | Win Rate: {tp_ratio:.2f}%")
 
     if not manager.equity_curve:
         return np.empty((0, 2))

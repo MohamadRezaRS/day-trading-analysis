@@ -9,33 +9,6 @@ MARKET_SPECS = {
     'Nasdaq': {'contract_size': 1}
 }
 
-def fast_simulate(times, highs, lows, spreads, start_t, ep, sl, tp, direction):
-    if pd.isna(start_t):
-        return None, None, None
-        
-    start_dt64 = np.datetime64(start_t)
-    idx = np.searchsorted(times, start_dt64)
-    
-    if idx >= len(times):
-        return None, None, None
-        
-    for i in range(idx, len(times)):
-        h = highs[i]
-        l = lows[i]
-        
-        if direction == 1:
-            if l <= sl:
-                return times[idx], times[i], -1.0
-            if h >= tp:
-                return times[idx], times[i], 2.0
-        else:
-            if h >= sl:
-                return times[idx], times[i], -1.0
-            if l <= tp:
-                return times[idx], times[i], 2.0
-                
-    return None, None, None
-
 class EventTradePool:
     def __init__(self):
         self.active_trades = []
@@ -64,6 +37,9 @@ class EventAccountManager:
         
         self.active_trades = []
         self.equity_curve = [{'Datetime': pd.Timestamp('2000-01-01'), 'Balance': start_balance}]
+        
+        self.total_trades = 0
+        self.winning_trades = 0
         
     def _get_unrealized_pnl(self, curr_time, df_1m_dict, df_1m_arrays):
         unrealized_pnl = 0.0
@@ -151,18 +127,27 @@ class EventAccountManager:
         if not np.isfinite(risk_amt):
             risk_amt = 0.0
             
-        # Updated to expect 2.0 or -1.0
         outcome = setup.get('Outcome', -1.0)
-        slippage_pct = 0.05
+        is_inverse = setup.get('is_inverse', False)
+        slippage_pct = np.random.uniform(0.0, 0.02)
         
-        if outcome == 2.0:
-            pnl = (risk_amt * 2.0) - (risk_amt * slippage_pct)
+        if is_inverse:
+            is_win = (outcome == -1.0)
+            reward_mult = 0.5
+        else:
+            is_win = (outcome == 2.0)
+            reward_mult = 2.0
+            
+        if is_win:
+            pnl = (risk_amt * reward_mult) - (risk_amt * slippage_pct)
+            self.winning_trades += 1
         else:
             pnl = -risk_amt - (risk_amt * slippage_pct)
             
         pnl = np.nan_to_num(pnl)
         
         self.balance += pnl
+        self.total_trades += 1
         self.equity_curve.append({'Datetime': curr_time, 'Balance': self.balance})
         
         if self.balance <= self.min_balance:
